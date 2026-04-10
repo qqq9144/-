@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>健康データ分析</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif; background: #0f0f0f; color: #e0e0e0; height: 100vh; display: flex; flex-direction: column; }
+  #header { background: #1a1a2e; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #2a2a4a; }
+  #header h1 { font-size: 16px; color: #7eb8f7; font-weight: 600; }
+  #auth-btn { background: #00b0b9; color: #fff; border: none; border-radius: 20px; padding: 7px 16px; font-size: 13px; cursor: pointer; }
+  #auth-btn.connected { background: #2a6b3a; }
+  #metrics { display: flex; gap: 8px; padding: 12px; overflow-x: auto; background: #151515; border-bottom: 1px solid #222; flex-shrink: 0; }
+  .metric-card { background: #1e1e2e; border-radius: 12px; padding: 10px 14px; min-width: 90px; text-align: center; flex-shrink: 0; }
+  .metric-label { font-size: 10px; color: #888; margin-bottom: 4px; }
+  .metric-value { font-size: 18px; font-weight: 700; color: #7eb8f7; }
+  .metric-unit { font-size: 10px; color: #666; }
+  #chat-area { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { max-width: 88%; padding: 10px 14px; border-radius: 16px; font-size: 14px; line-height: 1.6; }
+  .msg.user { background: #1a3a5c; align-self: flex-end; border-bottom-right-radius: 4px; }
+  .msg.ai { background: #1e1e2e; align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid #2a2a4a; }
+  .msg.ai .msg-label { font-size: 10px; color: #7eb8f7; margin-bottom: 4px; font-weight: 600; }
+  #input-area { padding: 10px 12px; background: #151515; border-top: 1px solid #222; display: flex; gap: 8px; align-items: flex-end; flex-shrink: 0; }
+  #user-input { flex: 1; background: #1e1e2e; border: 1px solid #333; border-radius: 20px; padding: 10px 16px; color: #e0e0e0; font-size: 14px; resize: none; max-height: 100px; outline: none; font-family: inherit; }
+  #send-btn { background: #00b0b9; border: none; border-radius: 50%; width: 40px; height: 40px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  #send-btn svg { width: 18px; height: 18px; fill: white; }
+  .quick-btns { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 8px; }
+  .quick-btn { background: #1e1e2e; border: 1px solid #333; border-radius: 16px; padding: 6px 12px; font-size: 12px; color: #aaa; cursor: pointer; }
+  .typing { display: flex; gap: 4px; align-items: center; padding: 4px 0; }
+  .typing span { width: 6px; height: 6px; background: #666; border-radius: 50%; animation: bounce 1s infinite; }
+  .typing span:nth-child(2) { animation-delay: 0.15s; }
+  .typing span:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-6px)} }
+  #status-bar { font-size: 11px; color: #666; padding: 4px 16px; background: #111; text-align: center; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <h1>💪 健康データ分析</h1>
+  <button id="auth-btn" onclick="startAuth()">Fitbit連携</button>
+</div>
+<div id="status-bar">Fitbitと連携してください</div>
+
+<div id="metrics">
+  <div class="metric-card"><div class="metric-label">心拍数(RHR)</div><div class="metric-value" id="m-rhr">--</div><div class="metric-unit">bpm</div></div>
+  <div class="metric-card"><div class="metric-label">HRV</div><div class="metric-value" id="m-hrv">--</div><div class="metric-unit">ms</div></div>
+  <div class="metric-card"><div class="metric-label">呼吸数(BR)</div><div class="metric-value" id="m-br">--</div><div class="metric-unit">brpm</div></div>
+  <div class="metric-card"><div class="metric-label">SpO2</div><div class="metric-value" id="m-spo2">--</div><div class="metric-unit">%</div></div>
+  <div class="metric-card"><div class="metric-label">皮膚温変動</div><div class="metric-value" id="m-temp">--</div><div class="metric-unit">°C</div></div>
+  <div class="metric-card"><div class="metric-label">睡眠効率</div><div class="metric-value" id="m-sleep">--</div><div class="metric-unit">%</div></div>
+</div>
+
+<div id="chat-area">
+  <div class="msg ai"><div class="msg-label">AI アナリスト</div>Fitbitと連携すると、今日の健康データを自動取得して分析します。まず上の「Fitbit連携」ボタンをタップしてください。</div>
+</div>
+
+<div class="quick-btns">
+  <button class="quick-btn" onclick="quickSend('今朝のデータを詳しく分析して')">📊 今朝を分析</button>
+  <button class="quick-btn" onclick="quickSend('今日の体調と推奨アクションを教えて')">💡 今日の推奨</button>
+  <button class="quick-btn" onclick="quickSend('最近の傾向を分析して')">📈 傾向分析</button>
+  <button class="quick-btn" onclick="quickSend('睡眠の質について詳しく教えて')">😴 睡眠分析</button>
+</div>
+
+<div id="input-area">
+  <textarea id="user-input" rows="1" placeholder="メッセージを入力..." onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+  <button id="send-btn" onclick="sendMessage()">
+    <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg>
+  </button>
+</div>
+
+<script>
+const FITBIT_CLIENT_ID = '23VDSX';
+let GEMINI_API_KEY = sessionStorage.getItem('gemini_key') || '';
+const REDIRECT_URI = 'https://qqq9144.github.io/-/fitbit_health_analyzer.html';
+
+let accessToken = null;
+let fitbitData = {};
+let chatHistory = [];
+
+function checkToken() {
+  if (!GEMINI_API_KEY) {
+    const key = prompt('Gemini APIキーを入力してください：');
+    if (key) { GEMINI_API_KEY = key; sessionStorage.setItem('gemini_key', key); }
+  }
+  // URLハッシュからトークン取得
+  const hash = window.location.hash;
+  if (hash) {
+    const params = new URLSearchParams(hash.replace('#', ''));
+    const token = params.get('access_token');
+    if (token) {
+      accessToken = token;
+      window.history.replaceState({}, '', window.location.pathname);
+      onConnected();
+      return;
+    }
+  }
+  // sessionStorageからトークン復元
+  const saved = sessionStorage.getItem('fitbit_token');
+  if (saved) {
+    accessToken = saved;
+    onConnected();
+  }
+}
+
+function startAuth() {
+  // 毎回新しいトークンを取得
+  sessionStorage.removeItem('fitbit_token');
+  accessToken = null;
+  const scopes = 'heartrate sleep respiratory_rate oxygen_saturation temperature profile activity';
+  const url = `https://www.fitbit.com/oauth2/authorize?response_type=token&client_id=${FITBIT_CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(scopes)}&expires_in=604800&prompt=login`;
+  window.location.href = url;
+}
+
+function onConnected() {
+  sessionStorage.setItem('fitbit_token', accessToken);
+  document.getElementById('auth-btn').textContent = 'データ更新';
+  document.getElementById('auth-btn').classList.add('connected');
+  document.getElementById('status-bar').textContent = '✅ Fitbit連携済み';
+  addMsg('ai', '✅ Fitbitと連携しました！データを取得中...');
+  fetchTodayData();
+}
+
+async function fetchTodayData() {
+  if (!accessToken) { addMsg('ai', 'まずFitbitと連携してください。'); return; }
+  // 今日と昨日の日付（HRV等は前夜分が翌朝に反映されるため昨日も取得）
+  const today = new Date().toISOString().split('T')[0];
+  const yd = new Date(); yd.setDate(yd.getDate()-1);
+  const yesterday = yd.toISOString().split('T')[0];
+  document.getElementById('status-bar').textContent = 'データ取得中...';
+  const headers = { Authorization: `Bearer ${accessToken}` };
+
+  try {
+    const [rhrRes, hrvTodayRes, hrvYestRes, brTodayRes, brYestRes, spo2TodayRes, spo2YestRes, tempTodayRes, tempYestRes, sleepRes] = await Promise.allSettled([
+      fetch(`https://api.fitbit.com/1/user/-/activities/heart/date/today/1d.json`, {headers}),
+      fetch(`https://api.fitbit.com/1/user/-/hrv/date/${today}.json`, {headers}),
+      fetch(`https://api.fitbit.com/1/user/-/hrv/date/${yesterday}.json`, {headers}),
+      fetch(`https://api.fitbit.com/1/user/-/br/date/${today}/${today}.json`, {headers}),
+      fetch(`https://api.fitbit.com/1/user/-/br/date/${yesterday}/${yesterday}.json`, {headers}),
+      fetch(`https://api.fitbit.com/1/user/-/spo2/date/${today}.json`, {headers}),
+      fetch(`https://api.fitbit.com/1/user/-/spo2/date/${yesterday}.json`, {headers}),
+      fetch(`https://api.fitbit.com/1/user/-/temp/skin/date/${today}.json`, {headers}),
+      fetch(`https://api.fitbit.com/1/user/-/temp/skin/date/${yesterday}.json`, {headers}),
+      fetch(`https://api.fitbit.com/1.2/user/-/sleep/date/${today}.json`, {headers}),
+    ]);
+
+    if (rhrRes.status === 'fulfilled' && rhrRes.value.ok) {
+      const d = await rhrRes.value.json();
+      const rhr = d['activities-heart']?.[0]?.value?.restingHeartRate;
+      if (rhr) { fitbitData.rhr = rhr; document.getElementById('m-rhr').textContent = rhr; }
+    }
+    // HRV（今日→昨日の順で取得）
+    for (const res of [hrvTodayRes, hrvYestRes]) {
+      if (res.status==='fulfilled' && res.value.ok) {
+        const d = await res.value.json();
+        const hrv = d.hrv?.[0]?.value?.dailyRmssd;
+        if (hrv) { fitbitData.hrv = Math.round(hrv); document.getElementById('m-hrv').textContent = Math.round(hrv); break; }
+      }
+    }
+    // BR
+    for (const res of [brTodayRes, brYestRes]) {
+      if (res.status==='fulfilled' && res.value.ok) {
+        const d = await res.value.json();
+        const br = d.br?.[0]?.value?.breathingRate;
+        if (br) { fitbitData.br = Math.round(br*10)/10; document.getElementById('m-br').textContent = Math.round(br*10)/10; break; }
+      }
+    }
+    // SpO2
+    for (const res of [spo2TodayRes, spo2YestRes]) {
+      if (res.status==='fulfilled' && res.value.ok) {
+        const d = await res.value.json();
+        const spo2 = d.value?.avg;
+        if (spo2) { fitbitData.spo2 = Math.round(spo2*10)/10; document.getElementById('m-spo2').textContent = Math.round(spo2*10)/10; break; }
+      }
+    }
+    // 皮膚温
+    for (const res of [tempTodayRes, tempYestRes]) {
+      if (res.status==='fulfilled' && res.value.ok) {
+        const d = await res.value.json();
+        const temp = d.tempSkin?.[0]?.value?.nightlyRelative;
+        if (temp !== undefined) { fitbitData.temp = Math.round(temp*10)/10; document.getElementById('m-temp').textContent = (temp>=0?'+':'')+Math.round(temp*10)/10; break; }
+      }
+    }
+    if (sleepRes.status === 'fulfilled' && sleepRes.value.ok) {
+      const d = await sleepRes.value.json();
+      const summary = d.summary;
+      if (summary) {
+        fitbitData.sleep = {
+          totalMinutes: summary.totalMinutesAsleep,
+          deepMinutes: summary.stages?.deep,
+          remMinutes: summary.stages?.rem,
+          lightMinutes: summary.stages?.light,
+          efficiency: d.sleep?.[0]?.efficiency
+        };
+        if (fitbitData.sleep.efficiency) document.getElementById('m-sleep').textContent = fitbitData.sleep.efficiency;
+      }
+    }
+
+    // デバッグ：各APIの生レスポンスをコンソールに出力
+    console.log('HRV today:', hrvTodayRes.status === 'fulfilled' ? await hrvTodayRes.value.clone().json() : hrvTodayRes.reason);
+    console.log('HRV yest:', hrvYestRes.status === 'fulfilled' ? await hrvYestRes.value.clone().json() : hrvYestRes.reason);
+    console.log('BR today:', brTodayRes.status === 'fulfilled' ? await brTodayRes.value.clone().json() : brTodayRes.reason);
+    console.log('Temp today:', tempTodayRes.status === 'fulfilled' ? await tempTodayRes.value.clone().json() : tempTodayRes.reason);
+    // デバッグ：APIレスポンスをチャットに表示
+    const debugInfo = [];
+    for (const [name, res] of [['HRV今日',hrvTodayRes],['HRV昨日',hrvYestRes],['BR今日',brTodayRes],['BR昨日',brYestRes],['SpO2今日',spo2TodayRes],['Temp今日',tempTodayRes]]) {
+      if (res.status==='fulfilled') {
+        const j = await res.value.clone().json();
+        debugInfo.push(`${name}(${res.value.status}): ${JSON.stringify(j).slice(0,80)}`);
+      } else {
+        debugInfo.push(`${name}: エラー`);
+      }
+    }
+    addMsg('ai', '🔍 デバッグ情報:\n' + debugInfo.join('\n'));
+    document.getElementById('status-bar').textContent = `✅ ${today} のデータ取得完了`;
+    addMsg('ai',
+      `📊 本日（${today}）のデータを取得しました！\n\n` +
+      `• 安静時心拍数: ${fitbitData.rhr ?? 'データなし'} bpm\n` +
+      `• HRV: ${fitbitData.hrv ?? 'データなし'} ms\n` +
+      `• 呼吸数: ${fitbitData.br ?? 'データなし'} brpm\n` +
+      `• SpO2: ${fitbitData.spo2 ?? 'データなし'} %\n` +
+      `• 皮膚温変動: ${fitbitData.temp !== undefined ? (fitbitData.temp>=0?'+':'')+fitbitData.temp : 'データなし'} °C\n\n` +
+      `下のボタンか、チャットで分析を依頼してください。`
+    );
+  } catch(e) {
+    addMsg('ai', `データ取得エラー: ${e.message}`);
+  }
+}
+
+async function sendMessage() {
+  const input = document.getElementById('user-input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  autoResize(input);
+  addMsg('user', text);
+
+  const typing = addTyping();
+  const dataStr = buildDataString();
+  chatHistory.push({ role: 'user', parts: [{ text: `${dataStr}\n\nユーザーの質問: ${text}` }] });
+
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: `あなたは優秀なフィジカルデータアナリストです。Fitbitの健康データをもとに、日本語で詳細かつ具体的な分析・アドバイスを提供してください。絵文字を適度に使い、読みやすく構造化して回答してください。` }] },
+        contents: chatHistory,
+        generationConfig: { temperature: 0.7, maxOutputTokens: 1500 }
+      })
+    });
+    const d = await res.json();
+    typing.remove();
+    if (!res.ok) {
+      addMsg('ai', `APIエラー(${res.status}): ${d.error?.message || JSON.stringify(d)}`);
+      return;
+    }
+    const reply = d.candidates?.[0]?.content?.parts?.[0]?.text || 'エラーが発生しました。';
+    chatHistory.push({ role: 'model', parts: [{ text: reply }] });
+    addMsg('ai', reply);
+  } catch(e) {
+    typing.remove();
+    addMsg('ai', `エラー: ${e.message}`);
+  }
+}
+
+function buildDataString() {
+  if (Object.keys(fitbitData).length === 0) return '※ Fitbitデータはまだ取得されていません。';
+  const s = fitbitData.sleep;
+  return `【本日のFitbitデータ】
+• 安静時心拍数(RHR): ${fitbitData.rhr ?? 'データなし'} bpm
+• 心拍変動(HRV): ${fitbitData.hrv ?? 'データなし'} ms
+• 呼吸数(BR): ${fitbitData.br ?? 'データなし'} brpm
+• 血中酸素(SpO2): ${fitbitData.spo2 ?? 'データなし'} %
+• 皮膚温変動: ${fitbitData.temp !== undefined ? (fitbitData.temp>=0?'+':'')+fitbitData.temp : 'データなし'} °C
+${s ? `• 睡眠: 合計${s.totalMinutes}分 / 深い眠り${s.deepMinutes}分 / REM${s.remMinutes}分 / 効率${s.efficiency}%` : ''}`;
+}
+
+function quickSend(text) {
+  document.getElementById('user-input').value = text;
+  sendMessage();
+}
+
+function addMsg(role, text) {
+  const area = document.getElementById('chat-area');
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+  if (role === 'ai') div.innerHTML = `<div class="msg-label">AI アナリスト</div>${esc(text).replace(/\n/g,'<br>')}`;
+  else div.textContent = text;
+  area.appendChild(div);
+  area.scrollTop = area.scrollHeight;
+  return div;
+}
+
+function addTyping() {
+  const area = document.getElementById('chat-area');
+  const div = document.createElement('div');
+  div.className = 'msg ai';
+  div.innerHTML = `<div class="msg-label">AI アナリスト</div><div class="typing"><span></span><span></span><span></span></div>`;
+  area.appendChild(div);
+  area.scrollTop = area.scrollHeight;
+  return div;
+}
+
+function mdToHtml(t) {
+  return esc(t)
+    .replace(/### (.+)/g, '<strong>$1</strong>')
+    .replace(/## (.+)/g, '<strong>$1</strong>')
+    .replace(/# (.+)/g, '<strong>$1</strong>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\* (.+)/g, '• $1')
+    .replace(/---/g, '<hr style="border-color:#333;margin:6px 0">')
+    .replace(/\n/g, '<br>');
+}
+function esc(t) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function handleKey(e) { if (e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();} }
+function autoResize(el) { el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,100)+'px'; }
+
+checkToken();
+</script>
+</body>
+</html>
